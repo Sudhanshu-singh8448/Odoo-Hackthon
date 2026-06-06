@@ -1,13 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
+import { useAuth } from '@/context/AuthContext';
 
 export default function QuotationDetailPage() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [quotation, setQuotation] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [generatingPo, setGeneratingPo] = useState(false);
   const toast = useToast();
   const router = useRouter();
 
@@ -22,6 +26,19 @@ export default function QuotationDetailPage() {
       await api.post('/approvals', { quotation_id: id });
       toast.success('Sent for approval!');
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  };
+
+  const generatePO = async () => {
+    setGeneratingPo(true);
+    try {
+      const { data } = await api.post('/purchase-orders', { quotation_id: id });
+      toast.success('Purchase order generated!');
+      router.push(`/purchase-orders/${data.data.id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to generate PO');
+    } finally {
+      setGeneratingPo(false);
+    }
   };
 
   if (loading) return <div className="page-container"><div className="skeleton skeleton-card" style={{ height: '300px' }} /></div>;
@@ -43,11 +60,19 @@ export default function QuotationDetailPage() {
           {quotation.status === 'submitted' && (
             <button className="btn btn-primary" onClick={submitForApproval}>✅ Send for Approval</button>
           )}
+          {quotation.purchase_order_id && (
+            <Link href={`/purchase-orders/${quotation.purchase_order_id}`} className="btn btn-outline">📦 View PO</Link>
+          )}
+          {quotation.status === 'accepted' && !quotation.purchase_order_id && ['admin','procurement_officer'].includes(user?.role) && (
+            <button className="btn btn-success" onClick={generatePO} disabled={generatingPo}>
+              {generatingPo ? 'Generating...' : '📦 Generate PO'}
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={() => router.back()}>← Back</button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-2-1">
         <div>
           <div className="card" style={{ marginBottom: '20px' }}>
             <h3 style={{ marginBottom: '16px' }}>Line Items</h3>

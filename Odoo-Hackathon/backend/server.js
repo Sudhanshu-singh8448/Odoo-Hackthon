@@ -16,18 +16,20 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
 // ─── Routes ─────────────────────────────────────────────────
+const { activityLogger } = require('./middleware/activityLogger');
+
 app.use('/api/auth', require('./routes/auth.routes'));
-app.use('/api/vendors', require('./routes/vendor.routes'));
-app.use('/api/rfqs', require('./routes/rfq.routes'));
-app.use('/api/quotations', require('./routes/quotation.routes'));
-app.use('/api/approvals', require('./routes/approval.routes'));
-app.use('/api/purchase-orders', require('./routes/purchaseOrder.routes'));
-app.use('/api/invoices', require('./routes/invoice.routes'));
+app.use('/api/vendors', activityLogger('vendor'), require('./routes/vendor.routes'));
+app.use('/api/rfqs', activityLogger('rfq'), require('./routes/rfq.routes'));
+app.use('/api/quotations', activityLogger('quotation'), require('./routes/quotation.routes'));
+app.use('/api/approvals', activityLogger('approval'), require('./routes/approval.routes'));
+app.use('/api/purchase-orders', activityLogger('purchase_order'), require('./routes/purchaseOrder.routes'));
+app.use('/api/invoices', activityLogger('invoice'), require('./routes/invoice.routes'));
 app.use('/api/activity-logs', require('./routes/activity.routes'));
 app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/reports', require('./routes/report.routes'));
 app.use('/api/dashboard', require('./routes/dashboard.routes'));
-app.use('/api/users', require('./routes/user.routes'));
+app.use('/api/users', activityLogger('user'), require('./routes/user.routes'));
 
 // ─── Health Check ───────────────────────────────────────────
 app.get('/api/health', (req, res) => {

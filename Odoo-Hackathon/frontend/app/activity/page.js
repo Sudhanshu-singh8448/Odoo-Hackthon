@@ -7,6 +7,9 @@ export default function ActivityPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [userId, setUserId] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({});
   const toast = useToast();
@@ -15,11 +18,14 @@ export default function ActivityPage() {
     setLoading(true);
     const params = { page, limit: 25 };
     if (filter) params.entity_type = filter;
+    if (userId) params.user_id = userId;
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
     api.get('/activity-logs', { params })
       .then(res => { setLogs(res.data.data || []); setPagination(res.data.pagination || {}); })
       .catch(() => toast.error('Failed to load'))
       .finally(() => setLoading(false));
-  }, [page, filter]);
+  }, [page, filter, userId, dateFrom, dateTo]);
 
   const entityIcon = { rfq: '📋', quotation: '💰', approval: '✅', purchase_order: '📦', invoice: '🧾', vendor: '🏢', user: '👤' };
   const actionColor = { CREATE: 'badge-green', UPDATE: 'badge-blue', DELETE: 'badge-red', PUBLISH: 'badge-purple', APPROVE: 'badge-green', REJECT: 'badge-red' };
@@ -48,6 +54,12 @@ export default function ActivityPage() {
             <option key={t} value={t}>{t.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>
           ))}
         </select>
+        <input className="form-input" style={{ maxWidth: '260px' }} placeholder="User ID" value={userId} onChange={e => { setUserId(e.target.value); setPage(1); }} />
+        <input className="form-input" style={{ width: 'auto' }} type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} />
+        <input className="form-input" style={{ width: 'auto' }} type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} />
+        {(filter || userId || dateFrom || dateTo) && (
+          <button className="btn btn-secondary" onClick={() => { setFilter(''); setUserId(''); setDateFrom(''); setDateTo(''); setPage(1); }}>Clear</button>
+        )}
       </div>
 
       {loading ? (

@@ -96,7 +96,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-2-1">
         <div className="card">
           <div className="card-header">
             <h3>Spending Trend</h3>

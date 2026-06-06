@@ -1,9 +1,10 @@
 const db = require('../config/db');
 const { AppError } = require('../middleware/errorHandler');
 const { logActivity, createNotification } = require('../services/notification.service');
+const { requireVendorForUser, ensureVendorQuotationAccess } = require('../utils/access');
 
-const generateQuotationNumber = async () => {
-  const result = await db.query("SELECT nextval('quotation_seq')");
+const generateQuotationNumber = async (query = db.query) => {
+  const result = await query("SELECT nextval('quotation_seq')");
   const seq = result.rows[0].nextval;
   const year = new Date().getFullYear();
   return `QT-${year}-${String(seq).padStart(5, '0')}`;
@@ -54,12 +55,18 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
+    if (req.user.role === 'vendor') {
+      await ensureVendorQuotationAccess(req.user.id, req.params.id);
+    }
+
     const qRes = await db.query(
       `SELECT q.*, v.company_name as vendor_name, v.email as vendor_email, v.rating as vendor_rating,
-        r.title as rfq_title, r.rfq_number, r.deadline as rfq_deadline
+        r.title as rfq_title, r.rfq_number, r.deadline as rfq_deadline,
+        po.id as purchase_order_id, po.po_number
        FROM quotations q
        JOIN vendors v ON q.vendor_id = v.id
        JOIN rfqs r ON q.rfq_id = r.id
+       LEFT JOIN purchase_orders po ON po.quotation_id = q.id
        WHERE q.id = $1`, [req.params.id]
     );
     if (qRes.rows.length === 0) throw new AppError('Quotation not found.', 404);
@@ -77,55 +84,68 @@ exports.getById = async (req, res, next) => {
 
 exports.submit = async (req, res, next) => {
   try {
-    const { rfq_id, vendor_id, delivery_days, notes, items } = req.body;
+    const { rfq_id, delivery_days, notes, items } = req.body;
+    let rfqRow;
 
-    // Verify RFQ is open
-    const rfq = await db.query("SELECT * FROM rfqs WHERE id = $1 AND status = 'open'", [rfq_id]);
-    if (rfq.rows.length === 0) throw new AppError('RFQ not found or not accepting quotations.', 404);
+    const quotation = await db.withTransaction(async (client) => {
+      const query = client.query.bind(client);
+      const vendor = await requireVendorForUser(req.user.id, query);
 
-    // Check vendor is assigned
-    const assigned = await db.query('SELECT * FROM rfq_vendors WHERE rfq_id = $1 AND vendor_id = $2', [rfq_id, vendor_id]);
-    if (assigned.rows.length === 0) throw new AppError('Vendor not assigned to this RFQ.', 403);
+      const rfq = await query("SELECT * FROM rfqs WHERE id = $1 AND status = 'open'", [rfq_id]);
+      if (rfq.rows.length === 0) throw new AppError('RFQ not found or not accepting quotations.', 404);
+      rfqRow = rfq.rows[0];
 
-    // Check not already submitted
-    const existing = await db.query('SELECT id FROM quotations WHERE rfq_id = $1 AND vendor_id = $2', [rfq_id, vendor_id]);
-    if (existing.rows.length > 0) throw new AppError('Quotation already submitted for this RFQ.', 409);
+      const assigned = await query(
+        'SELECT * FROM rfq_vendors WHERE rfq_id = $1 AND vendor_id = $2',
+        [rfq_id, vendor.id]
+      );
+      if (assigned.rows.length === 0) throw new AppError('Vendor not assigned to this RFQ.', 403);
 
-    const quotation_number = await generateQuotationNumber();
+      const existing = await query(
+        'SELECT id FROM quotations WHERE rfq_id = $1 AND vendor_id = $2',
+        [rfq_id, vendor.id]
+      );
+      if (existing.rows.length > 0) throw new AppError('Quotation already submitted for this RFQ.', 409);
 
-    // Calculate total
-    let total_amount = 0;
-    if (items) {
-      for (const item of items) {
-        total_amount += item.unit_price * item.quantity;
+      const validItems = Array.isArray(items) ? items : null;
+      for (const item of validItems || []) {
+        const rfqItem = await query(
+          'SELECT id, quantity FROM rfq_items WHERE id = $1 AND rfq_id = $2',
+          [item.rfq_item_id, rfq_id]
+        );
+        if (rfqItem.rows.length === 0) throw new AppError('Quotation contains an invalid RFQ item.', 400);
       }
-    }
 
-    const qRes = await db.query(
-      `INSERT INTO quotations (quotation_number, rfq_id, vendor_id, total_amount, delivery_days, notes)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [quotation_number, rfq_id, vendor_id, total_amount, delivery_days, notes]
-    );
-    const quotation = qRes.rows[0];
+      const total_amount = validItems.reduce((sum, item) => (
+        sum + (Number(item.unit_price || 0) * Number(item.quantity || 0))
+      ), 0);
+      const quotation_number = await generateQuotationNumber(query);
 
-    // Add items
-    if (items && items.length > 0) {
-      for (const item of items) {
+      const qRes = await query(
+        `INSERT INTO quotations (quotation_number, rfq_id, vendor_id, total_amount, delivery_days, notes)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [quotation_number, rfq_id, vendor.id, total_amount, delivery_days, notes]
+      );
+      const createdQuotation = qRes.rows[0];
+
+      for (const item of validItems) {
         const totalPrice = item.unit_price * item.quantity;
-        await db.query(
+        await query(
           `INSERT INTO quotation_items (quotation_id, rfq_item_id, unit_price, quantity, total_price)
            VALUES ($1, $2, $3, $4, $5)`,
-          [quotation.id, item.rfq_item_id, item.unit_price, item.quantity, totalPrice]
+          [createdQuotation.id, item.rfq_item_id, item.unit_price, item.quantity, totalPrice]
         );
       }
-    }
+
+      return createdQuotation;
+    });
 
     // Notify RFQ creator
-    await createNotification(rfq.rows[0].created_by, 'Quotation Received',
-      `A quotation has been submitted for RFQ: ${rfq.rows[0].title}`,
+    await createNotification(rfqRow.created_by, 'Quotation Received',
+      `A quotation has been submitted for RFQ: ${rfqRow.title}`,
       'rfq', `/rfqs/${rfq_id}`);
 
-    await logActivity(req.user.id, 'SUBMIT', 'quotation', quotation.id, `Quotation submitted for RFQ: ${rfq.rows[0].title}`);
+    await logActivity(req.user.id, 'SUBMIT', 'quotation', quotation.id, `Quotation submitted for RFQ: ${rfqRow.title}`);
 
     res.status(201).json({ success: true, data: quotation });
   } catch (err) { next(err); }
@@ -135,31 +155,51 @@ exports.update = async (req, res, next) => {
   try {
     const { delivery_days, notes, items } = req.body;
 
-    let total_amount = 0;
-    if (items) {
-      for (const item of items) { total_amount += item.unit_price * item.quantity; }
-    }
+    const quotation = await db.withTransaction(async (client) => {
+      const query = client.query.bind(client);
+      const vendor = await ensureVendorQuotationAccess(req.user.id, req.params.id, query);
 
-    const qRes = await db.query(
-      `UPDATE quotations SET delivery_days=$1, notes=$2, total_amount=$3, updated_at=NOW()
-       WHERE id=$4 AND status='submitted' RETURNING *`,
-      [delivery_days, notes, total_amount, req.params.id]
-    );
-    if (qRes.rows.length === 0) throw new AppError('Quotation not found or not editable.', 404);
-
-    if (items) {
-      await db.query('DELETE FROM quotation_items WHERE quotation_id = $1', [req.params.id]);
-      for (const item of items) {
-        const totalPrice = item.unit_price * item.quantity;
-        await db.query(
-          `INSERT INTO quotation_items (quotation_id, rfq_item_id, unit_price, quantity, total_price)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [req.params.id, item.rfq_item_id, item.unit_price, item.quantity, totalPrice]
+      const validItems = items || [];
+      for (const item of validItems) {
+        const rfqItem = await query(
+          `SELECT ri.id
+           FROM rfq_items ri
+           JOIN quotations q ON q.rfq_id = ri.rfq_id
+           WHERE ri.id = $1 AND q.id = $2`,
+          [item.rfq_item_id, req.params.id]
         );
+        if (rfqItem.rows.length === 0) throw new AppError('Quotation contains an invalid RFQ item.', 400);
       }
-    }
 
-    res.json({ success: true, data: qRes.rows[0] });
+      const total_amount = validItems
+        ? validItems.reduce((sum, item) => (
+        sum + (Number(item.unit_price || 0) * Number(item.quantity || 0))
+        ), 0)
+        : null;
+
+      const qRes = await query(
+        `UPDATE quotations SET delivery_days=$1, notes=$2, total_amount=COALESCE($3, total_amount), updated_at=NOW()
+         WHERE id=$4 AND vendor_id=$5 AND status='submitted' RETURNING *`,
+        [delivery_days, notes, total_amount, req.params.id, vendor.id]
+      );
+      if (qRes.rows.length === 0) throw new AppError('Quotation not found or not editable.', 404);
+
+      if (validItems) {
+        await query('DELETE FROM quotation_items WHERE quotation_id = $1', [req.params.id]);
+        for (const item of validItems) {
+          const totalPrice = item.unit_price * item.quantity;
+          await query(
+            `INSERT INTO quotation_items (quotation_id, rfq_item_id, unit_price, quantity, total_price)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [req.params.id, item.rfq_item_id, item.unit_price, item.quantity, totalPrice]
+          );
+        }
+      }
+
+      return qRes.rows[0];
+    });
+
+    res.json({ success: true, data: quotation });
   } catch (err) { next(err); }
 };
 
@@ -190,6 +230,14 @@ exports.compare = async (req, res, next) => {
 
     const rfqItems = await db.query('SELECT * FROM rfq_items WHERE rfq_id = $1', [rfq_id]);
 
-    res.json({ success: true, data: { rfq: rfq.rows[0], rfq_items: rfqItems.rows, quotations: detailed } });
+    res.json({
+      success: true,
+      data: {
+        rfq: rfq.rows[0],
+        rfq_title: rfq.rows[0].title,
+        rfq_items: rfqItems.rows,
+        quotations: detailed,
+      },
+    });
   } catch (err) { next(err); }
 };

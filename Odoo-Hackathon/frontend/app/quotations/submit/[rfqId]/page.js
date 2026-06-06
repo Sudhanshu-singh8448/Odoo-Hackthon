@@ -58,7 +58,7 @@ export default function SubmitQuotationPage() {
         <button className="btn btn-ghost" onClick={() => router.back()}>← Back</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-2-1">
         <div className="card">
           <h3 style={{ marginBottom: '20px' }}>Price Your Items</h3>
           {(rfq.items || []).map((item, i) => (

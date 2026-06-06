@@ -1,10 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 
 export default function Topbar({ onMenuToggle }) {
   const { user } = useAuth();
+  const router = useRouter();
   const [unread, setUnread] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs] = useState([]);
@@ -21,6 +23,16 @@ export default function Topbar({ onMenuToggle }) {
     await api.patch('/notifications/read-all');
     setUnread(0);
     setNotifs(prev => prev.map(n => ({ ...n, is_read: true })));
+  };
+
+  const openNotification = async (notification) => {
+    if (!notification.is_read) {
+      await api.patch(`/notifications/${notification.id}/read`).catch(() => {});
+      setUnread(prev => Math.max(0, prev - 1));
+      setNotifs(prev => prev.map(n => n.id === notification.id ? { ...n, is_read: true } : n));
+    }
+    setShowNotifs(false);
+    if (notification.link) router.push(notification.link);
   };
 
   if (!user) return null;
@@ -57,14 +69,14 @@ export default function Topbar({ onMenuToggle }) {
               {notifs.length === 0 ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>No notifications</div>
               ) : notifs.map(n => (
-                <div key={n.id} style={{
+                <button key={n.id} type="button" onClick={() => openNotification(n)} style={{
                   padding: '10px 16px', borderBottom: '1px solid var(--border-light)',
                   background: n.is_read ? 'transparent' : 'var(--primary-50)',
-                  cursor: 'pointer', fontSize: '0.85rem'
+                  cursor: 'pointer', fontSize: '0.85rem', border: 0, width: '100%', textAlign: 'left'
                 }}>
                   <strong style={{ display: 'block', marginBottom: '2px' }}>{n.title}</strong>
                   <span style={{ color: 'var(--text-tertiary)' }}>{n.message?.slice(0, 80)}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}

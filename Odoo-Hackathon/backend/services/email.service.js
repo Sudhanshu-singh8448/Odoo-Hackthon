@@ -14,6 +14,10 @@ const createTransporter = () => {
 };
 
 const sendInvoiceEmail = async (invoiceData, pdfBuffer) => {
+  if (!config.smtp.host || !config.smtp.user || !config.smtp.pass) {
+    throw new Error('SMTP configuration is incomplete.');
+  }
+
   const transporter = createTransporter();
 
   const mailOptions = {
@@ -53,13 +57,8 @@ const sendInvoiceEmail = async (invoiceData, pdfBuffer) => {
     ],
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Invoice email sent to ${invoiceData.vendor_email}`);
-  } catch (err) {
-    console.error(`❌ Failed to send invoice email: ${err.message}`);
-    // Don't throw - email failure shouldn't block the flow
-  }
+  await transporter.sendMail(mailOptions);
+  console.log(`✅ Invoice email sent to ${invoiceData.vendor_email}`);
 };
 
 module.exports = { sendInvoiceEmail };

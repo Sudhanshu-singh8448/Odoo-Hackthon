@@ -56,7 +56,7 @@ export default function VendorDetailPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-1-1">
         <div className="card">
           <h3 style={{ marginBottom: '16px' }}>Contact Information</h3>
           {editing ? (

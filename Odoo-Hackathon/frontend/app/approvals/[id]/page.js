@@ -46,12 +46,12 @@ export default function ApprovalDetailPage() {
         <button className="btn btn-ghost" onClick={() => router.back()}>← Back</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-2-1">
         <div>
           {/* Quotation Summary */}
           <div className="card" style={{ marginBottom: '20px' }}>
             <h3 style={{ marginBottom: '16px' }}>Quotation Summary</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div className="responsive-grid-1-1" style={{ gap: '16px', marginBottom: '16px' }}>
               {[['Quotation', approval.quotation_number], ['Vendor', approval.vendor_name], ['RFQ', approval.rfq_title || approval.rfq_number], ['Delivery', `${approval.delivery_days || '—'} days`]].map(([l,v]) => (
                 <div key={l}><div className="text-xs text-muted">{l}</div><div className="text-sm" style={{ fontWeight: 600 }}>{v || '—'}</div></div>
               ))}
@@ -108,7 +108,7 @@ export default function ApprovalDetailPage() {
           </div>
 
           {/* Decision Panel */}
-          {approval.status === 'pending' && user?.role === 'manager' && (
+          {approval.status === 'pending' && ['admin','manager'].includes(user?.role) && (
             <div className="card">
               <h3 style={{ marginBottom: '16px' }}>Your Decision</h3>
               <div className="form-group">

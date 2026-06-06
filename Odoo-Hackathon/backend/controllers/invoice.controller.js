@@ -3,9 +3,10 @@ const { AppError } = require('../middleware/errorHandler');
 const { logActivity, createNotification } = require('../services/notification.service');
 const { generateInvoicePDF } = require('../services/pdf.service');
 const { sendInvoiceEmail } = require('../services/email.service');
+const { ensureVendorEntityAccess } = require('../utils/access');
 
-const generateInvoiceNumber = async () => {
-  const result = await db.query("SELECT nextval('invoice_seq')");
+const generateInvoiceNumber = async (query = db.query) => {
+  const result = await query("SELECT nextval('invoice_seq')");
   const seq = result.rows[0].nextval;
   const year = new Date().getFullYear();
   return `INV-${year}-${String(seq).padStart(5, '0')}`;
@@ -23,6 +24,8 @@ exports.getAll = async (req, res, next) => {
       const vendorRes = await db.query('SELECT id FROM vendors WHERE user_id = $1', [req.user.id]);
       if (vendorRes.rows.length > 0) {
         where.push(`i.vendor_id = $${idx}`); params.push(vendorRes.rows[0].id); idx++;
+      } else {
+        return res.json({ success: true, data: [], pagination: { total: 0, page: 1, limit: 20, pages: 0 } });
       }
     }
 
@@ -52,6 +55,10 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
+    if (req.user.role === 'vendor') {
+      await ensureVendorEntityAccess(req.user.id, 'invoices', req.params.id);
+    }
+
     const invRes = await db.query(
       `SELECT i.*, v.company_name as vendor_name, v.email as vendor_email,
         v.gst_number as vendor_gst, v.address as vendor_address, v.city as vendor_city,
@@ -74,25 +81,30 @@ exports.create = async (req, res, next) => {
   try {
     const { po_id, due_date, payment_terms } = req.body;
 
-    const poRes = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [po_id]);
-    if (poRes.rows.length === 0) throw new AppError('Purchase order not found.', 404);
+    const invoice = await db.withTransaction(async (client) => {
+      const query = client.query.bind(client);
+      const poRes = await query('SELECT * FROM purchase_orders WHERE id = $1', [po_id]);
+      if (poRes.rows.length === 0) throw new AppError('Purchase order not found.', 404);
 
-    const existing = await db.query('SELECT id FROM invoices WHERE po_id = $1', [po_id]);
-    if (existing.rows.length > 0) throw new AppError('Invoice already exists for this PO.', 409);
+      const existing = await query('SELECT id FROM invoices WHERE po_id = $1', [po_id]);
+      if (existing.rows.length > 0) throw new AppError('Invoice already exists for this PO.', 409);
 
-    const po = poRes.rows[0];
-    const invoice_number = await generateInvoiceNumber();
-    const dueDate = due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default: 30 days
+      const po = poRes.rows[0];
+      const invoice_number = await generateInvoiceNumber(query);
+      const dueDate = due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    const result = await db.query(
-      `INSERT INTO invoices (invoice_number, po_id, vendor_id, subtotal, tax_rate, tax_amount, total_amount, due_date, payment_terms)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [invoice_number, po_id, po.vendor_id, po.subtotal, po.tax_rate, po.tax_amount, po.total_amount, dueDate, payment_terms || 'Net 30']
-    );
+      const result = await query(
+        `INSERT INTO invoices (invoice_number, po_id, vendor_id, subtotal, tax_rate, tax_amount, total_amount, due_date, payment_terms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [invoice_number, po_id, po.vendor_id, po.subtotal, po.tax_rate, po.tax_amount, po.total_amount, dueDate, payment_terms || 'Net 30']
+      );
 
-    await logActivity(req.user.id, 'CREATE', 'invoice', result.rows[0].id, `Invoice created: ${invoice_number}`);
+      return result.rows[0];
+    });
 
-    res.status(201).json({ success: true, data: result.rows[0] });
+    await logActivity(req.user.id, 'CREATE', 'invoice', invoice.id, `Invoice created: ${invoice.invoice_number}`);
+
+    res.status(201).json({ success: true, data: invoice });
   } catch (err) { next(err); }
 };
 

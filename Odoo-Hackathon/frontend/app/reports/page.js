@@ -11,6 +11,7 @@ export default function ReportsPage() {
   const [vendors, setVendors] = useState([]);
   const [spending, setSpending] = useState({ by_category: [], by_vendor: [] });
   const [trends, setTrends] = useState([]);
+  const [exportType, setExportType] = useState('vendor-performance');
   const [loading, setLoading] = useState(true);
   const toast = useToast();
 
@@ -36,6 +37,22 @@ export default function ReportsPage() {
     return `₹${n}`;
   };
 
+  const downloadCsv = async () => {
+    try {
+      const res = await api.get('/reports/export', { params: { type: exportType }, responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${exportType}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast.error('CSV export failed');
+    }
+  };
+
   if (loading) return (
     <div className="page-container">
       <div className="stat-grid">{[1,2,3,4].map(i => <div key={i} className="skeleton skeleton-card" />)}</div>
@@ -49,6 +66,16 @@ export default function ReportsPage() {
         <div>
           <h1 className="page-title">Reports & Analytics</h1>
           <p className="page-subtitle">Procurement performance insights</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <select className="form-select" style={{ width: 'auto' }} value={exportType} onChange={e => setExportType(e.target.value)}>
+            <option value="vendor-performance">Vendor Performance</option>
+            <option value="spending-by-category">Spending by Category</option>
+            <option value="spending-by-vendor">Spending by Vendor</option>
+            <option value="monthly-trends">Monthly Trends</option>
+            <option value="procurement-stats">Procurement Stats</option>
+          </select>
+          <button className="btn btn-primary" onClick={downloadCsv}>Export CSV</button>
         </div>
       </div>
 
@@ -68,7 +95,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Charts Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+      <div className="responsive-grid-1-1" style={{ marginBottom: '24px' }}>
         {/* Monthly Trend */}
         <div className="card">
           <div className="card-header"><h3>Monthly Procurement Trend</h3></div>

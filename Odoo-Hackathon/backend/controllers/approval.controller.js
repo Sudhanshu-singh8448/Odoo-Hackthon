@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { AppError } = require('../middleware/errorHandler');
 const { logActivity, createNotification } = require('../services/notification.service');
+const { createPurchaseOrderFromQuotation } = require('../services/purchaseOrder.service');
 
 exports.getAll = async (req, res, next) => {
   try {
@@ -11,7 +12,9 @@ exports.getAll = async (req, res, next) => {
     let idx = 1;
 
     if (req.user.role === 'manager') {
-      // Managers see all pending + their decided ones
+      where.push(`(a.status = 'pending' OR a.approved_by = $${idx})`);
+      params.push(req.user.id);
+      idx++;
     } else if (req.user.role !== 'admin') {
       where.push(`a.requested_by = $${idx}`); params.push(req.user.id); idx++;
     }
@@ -27,7 +30,8 @@ exports.getAll = async (req, res, next) => {
       `SELECT a.*, q.quotation_number, q.total_amount, q.delivery_days,
         v.company_name as vendor_name,
         r.title as rfq_title, r.rfq_number,
-        u1.name as requested_by_name, u2.name as approved_by_name
+        u1.name as requested_by_name, u1.name as requester_name,
+        u2.name as approved_by_name, u2.name as approver_name
        FROM approvals a
        JOIN quotations q ON a.quotation_id = q.id
        JOIN vendors v ON q.vendor_id = v.id
@@ -52,7 +56,8 @@ exports.getById = async (req, res, next) => {
       `SELECT a.*, q.quotation_number, q.total_amount, q.delivery_days, q.notes as quotation_notes,
         v.company_name as vendor_name, v.email as vendor_email, v.rating as vendor_rating,
         r.title as rfq_title, r.rfq_number, r.description as rfq_description,
-        u1.name as requested_by_name, u2.name as approved_by_name
+        u1.name as requested_by_name, u1.name as requester_name,
+        u2.name as approved_by_name, u2.name as approver_name
        FROM approvals a
        JOIN quotations q ON a.quotation_id = q.id
        JOIN vendors v ON q.vendor_id = v.id
@@ -62,15 +67,24 @@ exports.getById = async (req, res, next) => {
        WHERE a.id = $1`, [req.params.id]
     );
     if (result.rows.length === 0) throw new AppError('Approval not found.', 404);
+    const approval = result.rows[0];
+
+    if (req.user.role === 'manager' && approval.status !== 'pending' && approval.approved_by !== req.user.id) {
+      throw new AppError('Approval not found.', 404);
+    }
+
+    if (!['admin', 'manager'].includes(req.user.role) && approval.requested_by !== req.user.id) {
+      throw new AppError('Approval not found.', 404);
+    }
 
     // Get quotation items
     const items = await db.query(
       `SELECT qi.*, ri.product_name, ri.specification, ri.unit
        FROM quotation_items qi JOIN rfq_items ri ON qi.rfq_item_id = ri.id
-       WHERE qi.quotation_id = $1`, [result.rows[0].quotation_id]
+       WHERE qi.quotation_id = $1`, [approval.quotation_id]
     );
 
-    res.json({ success: true, data: { ...result.rows[0], items: items.rows } });
+    res.json({ success: true, data: { ...approval, items: items.rows } });
   } catch (err) { next(err); }
 };
 
@@ -121,27 +135,50 @@ exports.decide = async (req, res, next) => {
       throw new AppError('Status must be approved or rejected.', 400);
     }
 
-    const result = await db.query(
-      `UPDATE approvals SET status=$1, remarks=$2, approved_by=$3, decided_at=NOW()
-       WHERE id=$4 AND status='pending' RETURNING *`,
-      [status, remarks, req.user.id, req.params.id]
-    );
-    if (result.rows.length === 0) throw new AppError('Approval not found or already decided.', 404);
+    let poResult = null;
+    const approval = await db.withTransaction(async (client) => {
+      const query = client.query.bind(client);
+      const result = await query(
+        `UPDATE approvals SET status=$1, remarks=$2, approved_by=$3, decided_at=NOW()
+         WHERE id=$4 AND status='pending' RETURNING *`,
+        [status, remarks, req.user.id, req.params.id]
+      );
+      if (result.rows.length === 0) throw new AppError('Approval not found or already decided.', 404);
 
-    // Update quotation status
-    const qStatus = status === 'approved' ? 'accepted' : 'rejected';
-    await db.query('UPDATE quotations SET status = $1 WHERE id = $2', [qStatus, result.rows[0].quotation_id]);
+      const qStatus = status === 'approved' ? 'accepted' : 'rejected';
+      await query('UPDATE quotations SET status = $1 WHERE id = $2', [qStatus, result.rows[0].quotation_id]);
+
+      if (status === 'approved') {
+        poResult = await createPurchaseOrderFromQuotation({
+          quotationId: result.rows[0].quotation_id,
+          userId: req.user.id,
+          query,
+        });
+      }
+
+      return result.rows[0];
+    });
 
     // Notify requester
-    await createNotification(result.rows[0].requested_by,
+    await createNotification(approval.requested_by,
       `Quotation ${status === 'approved' ? 'Approved' : 'Rejected'}`,
       `Your quotation approval request has been ${status}.${remarks ? ' Remarks: ' + remarks : ''}`,
       status === 'approved' ? 'success' : 'warning',
       `/approvals/${req.params.id}`);
 
+    if (poResult?.created) {
+      const vendor = await db.query('SELECT user_id FROM vendors WHERE id = $1', [poResult.quotation.vendor_id]);
+      if (vendor.rows[0]?.user_id) {
+        await createNotification(vendor.rows[0].user_id, 'Purchase Order Generated',
+          `A purchase order ${poResult.po.po_number} has been created for your approved quotation.`,
+          'po', `/purchase-orders/${poResult.po.id}`);
+      }
+      await logActivity(req.user.id, 'CREATE', 'purchase_order', poResult.po.id, `PO created: ${poResult.po.po_number}`);
+    }
+
     await logActivity(req.user.id, status.toUpperCase(), 'approval', req.params.id,
       `Approval ${status}: ${remarks || 'No remarks'}`);
 
-    res.json({ success: true, data: result.rows[0] });
+    res.json({ success: true, data: approval, purchase_order: poResult?.po || null });
   } catch (err) { next(err); }
 };

@@ -23,6 +23,7 @@ const navItems = {
   ],
   admin: [
     { href: '/admin/users', icon: '👥', label: 'User Management', roles: ['admin'] },
+    { href: '/admin/settings', icon: '⚙️', label: 'Settings', roles: ['admin'] },
   ],
 };
 

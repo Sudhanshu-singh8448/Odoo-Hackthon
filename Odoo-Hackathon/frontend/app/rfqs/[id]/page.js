@@ -60,17 +60,17 @@ export default function RFQDetailPage() {
           {rfq.status === 'open' && ['admin','procurement_officer'].includes(user?.role) && (
             <button className="btn btn-secondary" onClick={handleClose}>🔒 Close RFQ</button>
           )}
-          {rfq.status === 'open' && user?.role === 'vendor' && (
+          {rfq.status === 'open' && (
             <Link href={`/quotations/submit/${id}`} className="btn btn-primary">💰 Submit Quotation</Link>
           )}
-          {rfq.quotations?.length >= 2 && (
+          {rfq.quotations?.length >= 1 && (
             <Link href={`/quotations/compare?rfq_id=${id}`} className="btn btn-outline">⚖️ Compare Quotations</Link>
           )}
           <button className="btn btn-ghost" onClick={() => router.back()}>← Back</button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-2-1">
         <div>
           {/* Description */}
           <div className="card" style={{ marginBottom: '20px' }}>

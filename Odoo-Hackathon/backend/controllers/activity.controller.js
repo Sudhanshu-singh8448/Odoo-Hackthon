@@ -2,7 +2,7 @@ const db = require('../config/db');
 
 exports.getLogs = async (req, res, next) => {
   try {
-    const { entity_type, user_id, page = 1, limit = 30 } = req.query;
+    const { entity_type, user_id, date_from, date_to, page = 1, limit = 30 } = req.query;
     const offset = (page - 1) * limit;
     let where = [];
     let params = [];
@@ -10,6 +10,8 @@ exports.getLogs = async (req, res, next) => {
 
     if (entity_type) { where.push(`al.entity_type = $${idx}`); params.push(entity_type); idx++; }
     if (user_id) { where.push(`al.user_id = $${idx}`); params.push(user_id); idx++; }
+    if (date_from) { where.push(`al.created_at >= $${idx}`); params.push(date_from); idx++; }
+    if (date_to) { where.push(`al.created_at < ($${idx}::date + INTERVAL '1 day')`); params.push(date_to); idx++; }
 
     const whereClause = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
     const countRes = await db.query(`SELECT COUNT(*) FROM activity_logs al ${whereClause}`, params);

@@ -1,9 +1,10 @@
 const db = require('../config/db');
 const { AppError } = require('../middleware/errorHandler');
 const { logActivity, createNotification } = require('../services/notification.service');
+const { ensureVendorRfqAccess } = require('../utils/access');
 
-const generateRfqNumber = async () => {
-  const result = await db.query("SELECT nextval('rfq_seq')");
+const generateRfqNumber = async (query = db.query) => {
+  const result = await query("SELECT nextval('rfq_seq')");
   const seq = result.rows[0].nextval;
   const year = new Date().getFullYear();
   return `RFQ-${year}-${String(seq).padStart(5, '0')}`;
@@ -60,6 +61,8 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
+    let vendor = null;
+
     const rfqRes = await db.query(
       `SELECT r.*, u.name as created_by_name
        FROM rfqs r LEFT JOIN users u ON r.created_by = u.id
@@ -67,17 +70,31 @@ exports.getById = async (req, res, next) => {
     );
     if (rfqRes.rows.length === 0) throw new AppError('RFQ not found.', 404);
 
+    if (req.user.role === 'vendor') {
+      vendor = await ensureVendorRfqAccess(req.user.id, req.params.id);
+    }
+
     const items = await db.query('SELECT * FROM rfq_items WHERE rfq_id = $1', [req.params.id]);
+    const vendorFilter = vendor ? ' AND rv.vendor_id = $2' : '';
+    const vendorParams = vendor ? [req.params.id, vendor.id] : [req.params.id];
     const vendors = await db.query(
       `SELECT rv.*, v.company_name, v.contact_person, v.email, v.rating,
         (SELECT COUNT(*) FROM quotations WHERE rfq_id = rv.rfq_id AND vendor_id = rv.vendor_id) as has_quotation
-       FROM rfq_vendors rv JOIN vendors v ON rv.vendor_id = v.id WHERE rv.rfq_id = $1`,
-      [req.params.id]
+       FROM rfq_vendors rv
+       JOIN vendors v ON rv.vendor_id = v.id
+       WHERE rv.rfq_id = $1${vendorFilter}`,
+      vendorParams
     );
+
+    const quotationFilter = vendor ? ' AND q.vendor_id = $2' : '';
+    const quotationParams = vendor ? [req.params.id, vendor.id] : [req.params.id];
     const quotations = await db.query(
       `SELECT q.*, v.company_name as vendor_name
-       FROM quotations q JOIN vendors v ON q.vendor_id = v.id WHERE q.rfq_id = $1 ORDER BY q.total_amount ASC`,
-      [req.params.id]
+       FROM quotations q
+       JOIN vendors v ON q.vendor_id = v.id
+       WHERE q.rfq_id = $1${quotationFilter}
+       ORDER BY q.total_amount ASC`,
+      quotationParams
     );
 
     res.json({
@@ -90,35 +107,34 @@ exports.getById = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   try {
     const { title, description, deadline, priority, items, vendor_ids } = req.body;
-    const rfq_number = await generateRfqNumber();
 
-    // Create RFQ
-    const rfqRes = await db.query(
-      `INSERT INTO rfqs (rfq_number, title, description, created_by, deadline, priority, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'draft') RETURNING *`,
-      [rfq_number, title, description, req.user.id, deadline, priority || 'medium']
-    );
-    const rfq = rfqRes.rows[0];
+    const rfq = await db.withTransaction(async (client) => {
+      const query = client.query.bind(client);
+      const rfq_number = await generateRfqNumber(query);
 
-    // Add items
-    if (items && items.length > 0) {
-      for (const item of items) {
-        await db.query(
+      const rfqRes = await query(
+        `INSERT INTO rfqs (rfq_number, title, description, created_by, deadline, priority, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'draft') RETURNING *`,
+        [rfq_number, title, description, req.user.id, deadline, priority || 'medium']
+      );
+      const createdRfq = rfqRes.rows[0];
+
+      for (const item of items || []) {
+        await query(
           'INSERT INTO rfq_items (rfq_id, product_name, specification, quantity, unit) VALUES ($1, $2, $3, $4, $5)',
-          [rfq.id, item.product_name, item.specification, item.quantity, item.unit || 'units']
+          [createdRfq.id, item.product_name, item.specification, item.quantity, item.unit || 'units']
         );
       }
-    }
 
-    // Assign vendors
-    if (vendor_ids && vendor_ids.length > 0) {
-      for (const vid of vendor_ids) {
-        await db.query(
+      for (const vid of vendor_ids || []) {
+        await query(
           'INSERT INTO rfq_vendors (rfq_id, vendor_id) VALUES ($1, $2)',
-          [rfq.id, vid]
+          [createdRfq.id, vid]
         );
       }
-    }
+
+      return createdRfq;
+    });
 
     await logActivity(req.user.id, 'CREATE', 'rfq', rfq.id, `RFQ created: ${title}`);
 
@@ -130,35 +146,38 @@ exports.update = async (req, res, next) => {
   try {
     const { title, description, deadline, priority, items, vendor_ids } = req.body;
 
-    const rfqRes = await db.query(
-      `UPDATE rfqs SET title=$1, description=$2, deadline=$3, priority=$4, updated_at=NOW()
-       WHERE id=$5 AND status='draft' RETURNING *`,
-      [title, description, deadline, priority, req.params.id]
-    );
-    if (rfqRes.rows.length === 0) throw new AppError('RFQ not found or not editable.', 404);
+    const updatedRfq = await db.withTransaction(async (client) => {
+      const query = client.query.bind(client);
+      const rfqRes = await query(
+        `UPDATE rfqs SET title=$1, description=$2, deadline=$3, priority=$4, updated_at=NOW()
+         WHERE id=$5 AND status='draft' RETURNING *`,
+        [title, description, deadline, priority, req.params.id]
+      );
+      if (rfqRes.rows.length === 0) throw new AppError('RFQ not found or not editable.', 404);
 
-    // Replace items
-    if (items) {
-      await db.query('DELETE FROM rfq_items WHERE rfq_id = $1', [req.params.id]);
-      for (const item of items) {
-        await db.query(
-          'INSERT INTO rfq_items (rfq_id, product_name, specification, quantity, unit) VALUES ($1, $2, $3, $4, $5)',
-          [req.params.id, item.product_name, item.specification, item.quantity, item.unit || 'units']
-        );
+      if (items) {
+        await query('DELETE FROM rfq_items WHERE rfq_id = $1', [req.params.id]);
+        for (const item of items) {
+          await query(
+            'INSERT INTO rfq_items (rfq_id, product_name, specification, quantity, unit) VALUES ($1, $2, $3, $4, $5)',
+            [req.params.id, item.product_name, item.specification, item.quantity, item.unit || 'units']
+          );
+        }
       }
-    }
 
-    // Replace vendor assignments
-    if (vendor_ids) {
-      await db.query('DELETE FROM rfq_vendors WHERE rfq_id = $1', [req.params.id]);
-      for (const vid of vendor_ids) {
-        await db.query('INSERT INTO rfq_vendors (rfq_id, vendor_id) VALUES ($1, $2)', [req.params.id, vid]);
+      if (vendor_ids) {
+        await query('DELETE FROM rfq_vendors WHERE rfq_id = $1', [req.params.id]);
+        for (const vid of vendor_ids) {
+          await query('INSERT INTO rfq_vendors (rfq_id, vendor_id) VALUES ($1, $2)', [req.params.id, vid]);
+        }
       }
-    }
+
+      return rfqRes.rows[0];
+    });
 
     await logActivity(req.user.id, 'UPDATE', 'rfq', req.params.id, `RFQ updated: ${title}`);
 
-    res.json({ success: true, data: rfqRes.rows[0] });
+    res.json({ success: true, data: updatedRfq });
   } catch (err) { next(err); }
 };
 

@@ -83,7 +83,7 @@ export default function PODetailPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="responsive-grid-2-1">
         <div>
           {/* PO Document Style */}
           <div className="card">
@@ -100,7 +100,7 @@ export default function PODetailPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginBottom: '24px' }}>
+            <div className="responsive-grid-1-1" style={{ marginBottom: '24px' }}>
               <div>
                 <div className="text-xs text-muted" style={{ marginBottom: '4px' }}>VENDOR</div>
                 <div style={{ fontWeight: 600 }}>{po.vendor_name || '—'}</div>

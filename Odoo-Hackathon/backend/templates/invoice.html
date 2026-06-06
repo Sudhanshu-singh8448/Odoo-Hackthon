@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice {{invoice_number}}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; line-height: 1.6; padding: 40px; background: white; }
+    .invoice-container { max-width: 800px; margin: 0 auto; }
+
+    /* Header */
+    .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 24px; border-bottom: 3px solid #4f46e5; margin-bottom: 32px; }
+    .brand h1 { font-size: 28px; color: #4f46e5; font-weight: 800; letter-spacing: -0.5px; }
+    .brand p { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .invoice-title { text-align: right; }
+    .invoice-title h2 { font-size: 32px; color: #4f46e5; font-weight: 700; letter-spacing: 2px; }
+    .invoice-title .inv-number { font-size: 16px; font-weight: 700; color: #1e293b; font-family: monospace; }
+
+    /* Info Grid */
+    .info-grid { display: flex; justify-content: space-between; margin-bottom: 32px; gap: 40px; }
+    .info-block { }
+    .info-block.right { text-align: right; }
+    .info-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; font-weight: 600; margin-bottom: 4px; }
+    .info-value { font-size: 14px; color: #1e293b; font-weight: 500; }
+    .info-value.bold { font-weight: 700; font-size: 15px; }
+    .info-row { margin-bottom: 12px; }
+
+    /* Items Table */
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .items-table thead th { background: #0f172a; color: white; padding: 12px 16px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+    .items-table thead th:last-child { text-align: right; }
+    .items-table tbody td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 14px; vertical-align: middle; }
+    .items-table tbody td:last-child { text-align: right; font-weight: 600; }
+    .items-table tbody tr:nth-child(even) { background: #f8fafc; }
+    .items-table tbody tr:last-child td { border-bottom: 2px solid #e2e8f0; }
+    .product-name { font-weight: 600; }
+    .product-spec { font-size: 12px; color: #64748b; }
+
+    /* Totals */
+    .totals-section { display: flex; justify-content: flex-end; }
+    .totals-box { width: 300px; }
+    .total-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; border-bottom: 1px solid #e2e8f0; }
+    .total-row .label { color: #64748b; }
+    .total-row .value { font-weight: 500; }
+    .total-row.grand { border-top: 3px solid #4f46e5; border-bottom: none; padding-top: 12px; margin-top: 4px; }
+    .total-row.grand .label { font-size: 16px; font-weight: 700; color: #1e293b; }
+    .total-row.grand .value { font-size: 20px; font-weight: 800; color: #4f46e5; }
+
+    /* Notes */
+    .notes-section { margin-top: 40px; padding: 16px; background: #f8fafc; border-radius: 8px; border-left: 4px solid #4f46e5; }
+    .notes-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 6px; }
+    .notes-section p { font-size: 13px; color: #475569; }
+
+    /* Footer */
+    .invoice-footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; }
+    .invoice-footer p { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .invoice-footer .company { font-weight: 600; color: #64748b; }
+
+    /* Status Badge */
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 50px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .status-generated { background: #dbeafe; color: #1d4ed8; }
+    .status-sent { background: #fef3c7; color: #d97706; }
+    .status-paid { background: #d1fae5; color: #059669; }
+    .status-overdue { background: #fee2e2; color: #dc2626; }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- Header -->
+    <div class="invoice-header">
+      <div class="brand">
+        <h1>VendorBridge</h1>
+        <p>Procurement & Vendor Management ERP</p>
+        <p>contact@vendorbridge.com</p>
+      </div>
+      <div class="invoice-title">
+        <h2>INVOICE</h2>
+        <div class="inv-number">{{invoice_number}}</div>
+        <div style="margin-top: 8px;">
+          <span class="status-badge status-{{status}}">{{status}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Grid -->
+    <div class="info-grid">
+      <div class="info-block">
+        <div class="info-row">
+          <div class="info-label">Bill To</div>
+          <div class="info-value bold">{{vendor_name}}</div>
+          {{#if vendor_email}}<div class="info-value">{{vendor_email}}</div>{{/if}}
+          {{#if vendor_phone}}<div class="info-value">{{vendor_phone}}</div>{{/if}}
+          {{#if vendor_address}}<div class="info-value">{{vendor_address}}</div>{{/if}}
+          {{#if vendor_gst}}<div class="info-value" style="margin-top:4px; font-size:12px; color:#64748b;">GST: {{vendor_gst}}</div>{{/if}}
+        </div>
+      </div>
+      <div class="info-block right">
+        <div class="info-row">
+          <div class="info-label">Invoice Date</div>
+          <div class="info-value">{{invoice_date}}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">Due Date</div>
+          <div class="info-value bold">{{due_date}}</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">PO Reference</div>
+          <div class="info-value" style="font-family: monospace;">{{po_number}}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Items Table -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>Description</th>
+          <th style="width:80px;">Qty</th>
+          <th style="width:60px;">Unit</th>
+          <th style="width:120px;">Unit Price</th>
+          <th style="width:120px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each items}}
+        <tr>
+          <td>{{@index_plus_one}}</td>
+          <td>
+            <div class="product-name">{{this.product_name}}</div>
+            {{#if this.specification}}<div class="product-spec">{{this.specification}}</div>{{/if}}
+          </td>
+          <td>{{this.quantity}}</td>
+          <td>{{this.unit}}</td>
+          <td>₹{{this.unit_price_formatted}}</td>
+          <td>₹{{this.total_price_formatted}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Totals -->
+    <div class="totals-section">
+      <div class="totals-box">
+        <div class="total-row">
+          <span class="label">Subtotal</span>
+          <span class="value">₹{{subtotal_formatted}}</span>
+        </div>
+        <div class="total-row">
+          <span class="label">Tax ({{tax_rate}}%)</span>
+          <span class="value">₹{{tax_amount_formatted}}</span>
+        </div>
+        <div class="total-row grand">
+          <span class="label">Total Due</span>
+          <span class="value">₹{{total_amount_formatted}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Terms -->
+    <div class="notes-section">
+      <h4>Payment Terms</h4>
+      <p>Payment is due within 30 days of the invoice date. Please include the invoice number <strong>{{invoice_number}}</strong> in your payment reference.</p>
+      <p style="margin-top: 6px;">For queries regarding this invoice, contact us at <strong>accounts@vendorbridge.com</strong>.</p>
+    </div>
+
+    <!-- Footer -->
+    <div class="invoice-footer">
+      <p class="company">VendorBridge Inc. — Procurement & Vendor Management ERP</p>
+      <p>This is a computer-generated invoice and does not require a physical signature.</p>
+      <p>Generated on {{generated_date}}</p>
+    </div>
+  </div>
+</body>
+</html>

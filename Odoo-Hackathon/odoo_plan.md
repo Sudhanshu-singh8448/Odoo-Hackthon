@@ -10,7 +10,7 @@ A full-stack ERP platform for managing vendors, RFQs, quotations, approvals, pur
 
 | Layer | Technology |
 |---|---|
-| **Frontend** | Next.js 14 (App Router), Vanilla CSS (design system) |
+| **Frontend** | Next.js 16 (App Router), Vanilla CSS (design system) |
 | **Backend** | Node.js + Express.js (REST API) |
 | **Database** | PostgreSQL (via `pg` + raw SQL / Knex.js for query builder & migrations) |
 | **Auth** | JWT (access + refresh tokens), bcrypt for password hashing |
@@ -362,7 +362,7 @@ erDiagram
 - [NEW] [middleware/errorHandler.js](file:///Users/sudhanshukumar/Desktop/Odoo-Hackathon/backend/middleware/errorHandler.js) — Centralized error handling
 
 #### Frontend
-- [NEW] Initialize Next.js 14 project (App Router)
+- [NEW] Initialize Next.js 16 project (App Router)
 - [NEW] [globals.css](file:///Users/sudhanshukumar/Desktop/Odoo-Hackathon/frontend/app/globals.css) — Complete design system:
   - CSS custom properties (colors, spacing, radii, shadows, typography)
   - Dark mode support via `prefers-color-scheme`

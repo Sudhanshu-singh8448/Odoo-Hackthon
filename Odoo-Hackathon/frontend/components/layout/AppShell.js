@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 
-const publicPaths = ['/login', '/signup', '/forgot-password'];
+const publicPaths = ['/', '/login', '/signup', '/forgot-password'];
 
 export default function AppShell({ children }) {
   const { user, loading } = useAuth();

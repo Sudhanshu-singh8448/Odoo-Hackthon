@@ -88,7 +88,7 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* Bill To & Dates */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '32px' }}>
+        <div className="responsive-grid-1-1" style={{ marginBottom: '32px' }}>
           <div>
             <div className="text-xs text-muted" style={{ marginBottom: '8px', letterSpacing: '0.05em' }}>BILL TO</div>
             <div style={{ fontWeight: 600, fontSize: '1rem' }}>{invoice.vendor_name || '—'}</div>

@@ -1,18 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-
 /**
  * Generate invoice PDF from invoice data.
- * Uses a simple HTML-to-PDF approach without Puppeteer for reliability.
- * Falls back to generating a simple PDF buffer.
  */
 const generateInvoicePDF = async (invoiceData) => {
   const html = generateInvoiceHTML(invoiceData);
+  const puppeteer = require('puppeteer');
+  let browser;
 
-  // Try Puppeteer first, fall back to returning HTML as buffer
   try {
-    const puppeteer = require('puppeteer');
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
@@ -23,11 +18,13 @@ const generateInvoicePDF = async (invoiceData) => {
       printBackground: true,
       margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
     });
-    await browser.close();
     return pdf;
   } catch (err) {
-    console.error('Puppeteer PDF failed, returning HTML buffer:', err.message);
-    return Buffer.from(html, 'utf-8');
+    throw new Error(`PDF generation failed: ${err.message}`);
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
   }
 };
 

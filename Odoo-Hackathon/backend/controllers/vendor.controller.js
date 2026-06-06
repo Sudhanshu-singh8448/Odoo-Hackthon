@@ -10,6 +10,8 @@ exports.getAll = async (req, res, next) => {
     let params = [];
     let idx = 1;
 
+    where.push('deleted_at IS NULL');
+
     if (search) {
       where.push(`(company_name ILIKE $${idx} OR contact_person ILIKE $${idx} OR email ILIKE $${idx})`);
       params.push(`%${search}%`);
@@ -39,7 +41,7 @@ exports.getAll = async (req, res, next) => {
 
 exports.getById = async (req, res, next) => {
   try {
-    const result = await db.query('SELECT * FROM vendors WHERE id = $1', [req.params.id]);
+    const result = await db.query('SELECT * FROM vendors WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
     if (result.rows.length === 0) throw new AppError('Vendor not found.', 404);
 
     // Get vendor stats
@@ -108,18 +110,24 @@ exports.updateStatus = async (req, res, next) => {
 
 exports.remove = async (req, res, next) => {
   try {
-    const result = await db.query('DELETE FROM vendors WHERE id = $1 RETURNING id, company_name', [req.params.id]);
+    const result = await db.query(
+      `UPDATE vendors
+       SET status = 'inactive', deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, company_name`,
+      [req.params.id]
+    );
     if (result.rows.length === 0) throw new AppError('Vendor not found.', 404);
 
     await logActivity(req.user.id, 'DELETE', 'vendor', req.params.id, `Vendor deleted: ${result.rows[0].company_name}`);
 
-    res.json({ success: true, message: 'Vendor deleted.' });
+    res.json({ success: true, message: 'Vendor archived.' });
   } catch (err) { next(err); }
 };
 
 exports.getCategories = async (req, res, next) => {
   try {
-    const result = await db.query('SELECT DISTINCT category FROM vendors WHERE category IS NOT NULL ORDER BY category');
+    const result = await db.query('SELECT DISTINCT category FROM vendors WHERE category IS NOT NULL AND deleted_at IS NULL ORDER BY category');
     res.json({ success: true, data: result.rows.map(r => r.category) });
   } catch (err) { next(err); }
 };

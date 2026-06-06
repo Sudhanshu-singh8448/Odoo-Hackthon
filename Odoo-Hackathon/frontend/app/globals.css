@@ -1323,3 +1323,37 @@ p { color: var(--text-secondary); }
   .auth-brand h1 { font-size: 1.3rem; }
   .table th, .table td { padding: 8px 10px; font-size: 0.75rem; }
 }
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .sidebar,
+  .topbar,
+  .page-header,
+  .toast-container {
+    display: none !important;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding-top: 0;
+  }
+
+  .page-container {
+    max-width: none;
+    padding: 0;
+  }
+
+  .invoice-preview {
+    border: 0;
+    box-shadow: none;
+    padding: 20mm;
+  }
+
+  .card,
+  .table-container {
+    box-shadow: none;
+  }
+}

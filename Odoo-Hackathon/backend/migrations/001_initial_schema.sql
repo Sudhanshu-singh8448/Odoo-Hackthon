@@ -41,9 +41,12 @@ CREATE TABLE IF NOT EXISTS vendors (
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'blacklisted')),
     rating DECIMAL(3,2) DEFAULT 0.00,
     notes TEXT,
+    deleted_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
 
 -- ============================================
 -- 3. RFQS TABLE
@@ -213,23 +216,24 @@ CREATE TABLE IF NOT EXISTS notifications (
 -- ============================================
 -- INDEXES
 -- ============================================
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_vendors_status ON vendors(status);
-CREATE INDEX idx_vendors_category ON vendors(category);
-CREATE INDEX idx_rfqs_status ON rfqs(status);
-CREATE INDEX idx_rfqs_created_by ON rfqs(created_by);
-CREATE INDEX idx_quotations_rfq_id ON quotations(rfq_id);
-CREATE INDEX idx_quotations_vendor_id ON quotations(vendor_id);
-CREATE INDEX idx_quotations_status ON quotations(status);
-CREATE INDEX idx_approvals_status ON approvals(status);
-CREATE INDEX idx_approvals_approved_by ON approvals(approved_by);
-CREATE INDEX idx_purchase_orders_status ON purchase_orders(status);
-CREATE INDEX idx_invoices_status ON invoices(status);
-CREATE INDEX idx_activity_logs_user_id ON activity_logs(user_id);
-CREATE INDEX idx_activity_logs_entity ON activity_logs(entity_type, entity_id);
-CREATE INDEX idx_notifications_user_id ON notifications(user_id);
-CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_vendors_status ON vendors(status);
+CREATE INDEX IF NOT EXISTS idx_vendors_category ON vendors(category);
+CREATE INDEX IF NOT EXISTS idx_vendors_deleted_at ON vendors(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_rfqs_status ON rfqs(status);
+CREATE INDEX IF NOT EXISTS idx_rfqs_created_by ON rfqs(created_by);
+CREATE INDEX IF NOT EXISTS idx_quotations_rfq_id ON quotations(rfq_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_vendor_id ON quotations(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_status ON quotations(status);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+CREATE INDEX IF NOT EXISTS idx_approvals_approved_by ON approvals(approved_by);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_user_id ON activity_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_entity ON activity_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON notifications(is_read);
 
 -- ============================================
 -- SEQUENCE HELPERS (for auto-numbering)
